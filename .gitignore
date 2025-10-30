@@ -1,0 +1,14 @@
+# Arduino build and temp files
+*.hex
+*.elf
+*.bin
+*.eep
+*.dmp
+*.map
+
+# Mac and Windows junk
+.DS_Store
+Thumbs.db
+
+# VSCode Arduino plugin
+.vscode/

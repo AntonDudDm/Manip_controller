@@ -1,93 +1,55 @@
 #include <Servo.h>
 
-Servo myServo;
+Servo s[4];
+const int PINS[4] = {9, 10, 8, 11};
 
-const int SERVO_PIN = 9;
+// Подстрой под свою серву
+const int STOP_PWM = 90;
+const int FWD_PWM  = 110;
+const int BACK_PWM = 70;
 
-// калибровка под твою серву
-const int STOP_PWM  = 90;   // при этом стоит
-const int FWD_PWM   = 150;  // максимальная вперёд
-const int BACK_PWM  = 30;   // максимальная назад
+// Время ожидания без команд, после которого стопим всё (мс)
+const unsigned long TIMEOUT_MS = 120;
 
-// плавность
-const int UPDATE_DT   = 20;   // каждые 20 мс обновляем PWM
-const int ACCEL_STEP  = 1;    // так быстро разгоняемся
-const int DECEL_STEP  = 5;    // так быстро тормозим
-
-// через сколько мс без команд начинаем тормозить
-const unsigned long NO_CMD_TIMEOUT = 120;  // 0.12 секунды
-
-int currentPWM = STOP_PWM;
-int targetPWM  = STOP_PWM;
-
-unsigned long lastUpdate   = 0;
-unsigned long lastCommand  = 0;
+unsigned long lastCmdTime = 0;
+int currentCmd[4] = {0, 0, 0, 0};  // -1 = back, 0 = stop, +1 = forward
 
 void setup() {
-  myServo.attach(SERVO_PIN);
-  myServo.write(STOP_PWM);
   Serial.begin(9600);
-  Serial.println("Send F/B/S. Auto-stop after key released.");
+  for (int i = 0; i < 4; i++) {
+    s[i].attach(PINS[i]);
+    s[i].write(STOP_PWM);
+  }
+  lastCmdTime = millis();
 }
 
 void loop() {
-  bool gotCmd = false;
+  // --- читаем команды вида <id><cmd> ---
+  while (Serial.available() >= 2) {
+    char id = Serial.read();
+    char cmd = Serial.read();
+    if (cmd >= 'a' && cmd <= 'z') cmd -= 32; // верхний регистр
 
-  // 1. читаем, что пришло
-  while (Serial.available() > 0) {
-    char c = Serial.read();
-    gotCmd = true;
-
-    if (c >= 'a' && c <= 'z') c = c - 'a' + 'A';
-
-    if (c == 'F') {
-      targetPWM = FWD_PWM;
-      lastCommand = millis();
-      Serial.println("FWD");
-    } else if (c == 'B') {
-      targetPWM = BACK_PWM;
-      lastCommand = millis();
-      Serial.println("BACK");
-    } else if (c == 'S') {
-      targetPWM = STOP_PWM;
-      lastCommand = millis();
-      Serial.println("STOP");
-    } else if (c == '\r' || c == '\n') {
-      // ignore
-    } else {
-      // unknown
+    if (id >= '1' && id <= '4') {
+      int i = id - '1';
+      if (cmd == 'F') { s[i].write(FWD_PWM);  currentCmd[i] = 1; }
+      else if (cmd == 'B') { s[i].write(BACK_PWM); currentCmd[i] = -1; }
+      else { s[i].write(STOP_PWM); currentCmd[i] = 0; }
     }
+    else if (id == '0') {  // 0S = всем стоп
+      for (int i=0;i<4;i++){ s[i].write(STOP_PWM); currentCmd[i]=0; }
+    }
+
+    lastCmdTime = millis(); // помечаем, что что-то пришло
   }
 
-  unsigned long now = millis();
-
-  // 2. если давно ничего не приходило → начинаем тормозить
-  if ((now - lastCommand) > NO_CMD_TIMEOUT) {
-    targetPWM = STOP_PWM;
-  }
-
-  // 3. плавно тянем currentPWM к targetPWM
-  if (now - lastUpdate >= UPDATE_DT) {
-    lastUpdate = now;
-
-    if (currentPWM != targetPWM) {
-      // определим, разгон или торможение
-      bool braking =
-        (targetPWM == STOP_PWM) ||
-        (currentPWM < STOP_PWM && targetPWM > STOP_PWM) ||
-        (currentPWM > STOP_PWM && targetPWM < STOP_PWM);
-
-      int step = braking ? DECEL_STEP : ACCEL_STEP;
-
-      if (currentPWM < targetPWM) {
-        currentPWM += step;
-        if (currentPWM > targetPWM) currentPWM = targetPWM;
-      } else {
-        currentPWM -= step;
-        if (currentPWM < targetPWM) currentPWM = targetPWM;
+  // --- если нет команд слишком долго — стопим всё ---
+  if (millis() - lastCmdTime > TIMEOUT_MS) {
+    for (int i = 0; i < 4; i++) {
+      if (currentCmd[i] != 0) {
+        s[i].write(STOP_PWM);
+        currentCmd[i] = 0;
       }
-
-      myServo.write(currentPWM);
     }
   }
 }

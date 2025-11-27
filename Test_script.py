@@ -2,7 +2,7 @@ import serial
 import keyboard
 import time
 
-PORT = "COM3"   # свой COM
+PORT = "COM4"   # свой COM
 BAUD = 9600
 
 KEEPALIVE_MS = 60  # частота посылки команд при удержании
